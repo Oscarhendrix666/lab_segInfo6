@@ -3,16 +3,41 @@ import random
 import socket
 import pickle
 import RSA
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
 
+def comprobarClave(k1,k2):
+    if k1 == k2:
+        return True
+    else:
+        return "La clave no coincide"
+
+def aes_receive_and_decrypt(key, server_socket):
+    # Recibir el IV y el ciphertext del cliente
+    data = server_socket.recv(1024)
+    
+    # Extraer el IV y el ciphertext
+    iv = data[:AES.block_size]
+    ciphertext = data[AES.block_size:]
+
+    # Crear un objeto AES para desencriptar
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+
+    # Desencriptar el ciphertext y quitar el relleno
+    decrypted_data = unpad(cipher.decrypt(ciphertext), AES.block_size)
+
+    return decrypted_data.decode()
+
+def calcular_md5(archivo):
+    hash_md5 = hashlib.md5()
+    with open(archivo, "rb") as f:
+        for bloque in iter(lambda: f.read(4096), b""):
+            hash_md5.update(bloque)
+    return hash_md5.hexdigest()
 
 def cliente():
     socket_cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     socket_cliente.connect(('127.0.0.1', 800))
-
-    q = int(input("Ingresa tu clave numerica: "))
-
-    socket_cliente.sendall(str(q).encode())
-
     serie =socket_cliente.recv(4096)
     valores_server = pickle.loads(serie)
 
@@ -21,8 +46,6 @@ def cliente():
     phi_N = valores_server["phi_N"]
     e = valores_server["e"]
 
-    print(f"clave publica: {n,e}")
-
     try:
         d = RSA.find_mod_inv(e, phi_N) #valor de la llave privada (d)
         print('proceso realizado exitoso')
@@ -30,52 +53,37 @@ def cliente():
     except:
         print('El valor del inverso no existe.\n')
 
-    msg = input("mensaje a enviar: ")
+    print(f"clave publica: {n,e}")
+
+    msg = 15478851321
     enc_msg = RSA.cifrar(msg, e, n)
 
-    with open('mensaje_entrada.txt', 'w') as file:
+    with open('mensaje de entrada.txt', 'w') as file:
         file.write(str(enc_msg))
-
-    print("Mensaje cifrado guardado en mensaje_cifrado.txt")
-
-    # Enviar el archivo cifrado al servidor
-    with open('mensaje_cifrado.txt', 'rb') as file:
-        file_data = file.read()
-        socket_cliente.sendall(file_data)
-
+    file = 'mensaje de entrada.txt'
+    print("Mensaje cifrado guardado en mensaje de entrada.txt")
+    socket_cliente.send(file)
     print("Archivo cifrado enviado al servidor.")
 
-    # Descifrar el mensaje
-    file_data = socket_cliente.recv(4096)
+    # Actividad 2
+    p = 757
+    g = 547
 
-    # Recibir respuesta del servidor y decodificarlo
-    with open('mensaje_recibido.txt', 'rb') as file:
-        mensaje_cifrado = int(file.read())
+    b = 382
+    Bc = int((g**b)%p)
+    socket_cliente.send(Bc)
+    As = socket_cliente.recv(4096)
+    kb = int((As**b)%p)
+    socket_cliente.send(kb)
+    if comprobarClave(ka,Kb) == True:
+        dec_msg = aes_receive_and_decrypt(key=kb, server_socket=socket_cliente)
+        with open('mensaje de vuelta.txt', 'w') as file:
+            file.write(str(dec_msg))
+    else:
+        "Ha ocurrido un error"
 
-
-    mensaje_descifrado = RSA.descifrar(mensaje_cifrado, d, n)
-    # Guardar el archivo cifrado
-    with open('mensaje_recibido.txt', 'wb') as file:
-        file.write(mensaje_descifrado)
-
-    print("Mensaje descifrado")
-
+    md5_send = calcular_md5(archivo='mensaje de vuelta.txt')
+    print(f"md5 de archivo desencriptado recibido: {md5_send}")
     socket_cliente.close()
-
-
-    print('Comunicacion con el gamal\n')
-    g = random.randint(1, 1000)
-    a = 369 #clave privada del emisor
-    b = 693 #clave privada del receptor
-    k = (g**a) % p
-    clave_publica = (g, p, k)
-    print(f'se genero la siguiente clave publica: {clave_publica}')
-    m = int(input('ingresar el mensaje que desea enviar--> '))
-    #cifrando
-    y1 = (g**b) % p
-    y2 = ((k**b) * m) % p
-    #descifrando
-    m2 = (y1**(p-1-a) * y2) % p
-    print(f'El mensaje descifrado es el siguiente: {m2}\n')
 
 cliente()
